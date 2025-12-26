@@ -1,0 +1,13 @@
+# poseCaculate 参数 - slovePnP 配置文件
+small_armor_width: 0.230
+small_armor_height: 0.110
+large_armor_width: 0.460
+large_armor_height: 0.170
+
+pnp_method: 1
+
+debug_mode: true
+print_results: true
+
+min_valid_distance: 0.2
+max_valid_distance: 10.0
