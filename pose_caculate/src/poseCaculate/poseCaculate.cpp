@@ -34,7 +34,7 @@ void PoseCaculate::loadParameters()
     pnp_method_ = nh_.param("pnp_method", 1/*cv::SOLVEPNP_EPNP*/);
     
     // 调试选项
-    debug_mode_ = nh_.param("debug_mode", false);
+    debug_mode_ = nh_.param("debug_mode", true);
     print_results_ = nh_.param("print_results", true);
     min_valid_distance_ = nh_.param("min_valid_distance", 0.2);
     max_valid_distance_ = nh_.param("max_valid_distance", 10.0);

@@ -62,6 +62,7 @@ void ArmorDetect::dynamicReconfigureCallback(armor_detect::armorDetectConfig &co
     draw_detect_.e_l_center = config.draw_e_l_center;
     draw_detect_.e_r_center = config.draw_e_r_center;
     draw_detect_.e_label = config.draw_e_label;
+    draw_detect_.e_points = config.draw_e_points;
     
     // 更新绘制颜色
     draw_detect_.e_light_c = colorEnumToScalar(config.draw_color_e_light);

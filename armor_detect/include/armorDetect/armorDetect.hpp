@@ -122,7 +122,7 @@ private:
         white = 0, black, red, orange, yellow, green, bule, purple
     };
     struct draw_detect {
-        bool e_light, e_rect, e_l_center, e_r_center, e_label;
+        bool e_light, e_rect, e_l_center, e_r_center, e_label, e_points;
         cv::Scalar e_light_c, e_rect_c, e_l_center_c, e_r_center_c;
     } draw_detect_;
 
@@ -163,7 +163,8 @@ public:
     void dynamicReconfigureCallback(armor_detect::armorDetectConfig &config, uint32_t level);
     
     // 获取顶点、发布
-    std::vector<cv::Point2f> getArmorVertices(const LightDescriptor& left_light, const LightDescriptor& right_light,int armor_type);
+    std::vector<cv::Point2f> selectArmorVertices(const LightDescriptor& left_light, const LightDescriptor& right_light);// 统一的顶点获取接口
+    std::vector<cv::Point2f> getArmorVertices(const LightDescriptor& left_light, const LightDescriptor& right_light, int armor_type);
     void pubArmorVertices(std::vector<ArmorDescriptor> detected_armors);
 };
 

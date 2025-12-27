@@ -50,6 +50,7 @@ dictitems:
       draw_e_light: true
       draw_e_r_center: true
       draw_e_rect: true
+      draw_e_points: true
       enemy_color: 0
       enemy_type: 0
       groups: !!python/object/new:dynamic_reconfigure.encoding.Config

@@ -37,10 +37,25 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor,cv::Mat
         // 5. 计算重投影误差（可选，用于调试）
         if (debug_mode_)
         {
-            double reproj_error = calculateReprojectionError(
-                object_points, image_points, rvec, tvec);
-            ROS_DEBUG("Armor %d reprojection error: %.2f pixels", 
-                        armor.armor_id, reproj_error);
+            double reproj_error = calculateReprojectionError(object_points, image_points, rvec, tvec);
+            ROS_DEBUG("Armor %d reprojection error: %.2f pixels", armor.armor_id, reproj_error);
+                for (int i = 0; i < 4; i++) {
+                    ROS_INFO("Point %d: 3D(%.3f, %.3f, %.3f) -> 2D(%.1f, %.1f)", i, 
+                    object_points[i].x, object_points[i].y, object_points[i].z,
+                    image_points[i].x, image_points[i].y);
+                }
+
+            ROS_INFO("=== Armor %d PnP Input ===", armor.armor_id);
+            ROS_INFO("2D Image Points (pixels):");
+            for (int i = 0; i < 4; i++) {
+                ROS_INFO("  Point %d: (%.1f, %.1f)", i, image_points[i].x, image_points[i].y);
+            }
+            ROS_INFO("3D Object Points (meters):");
+            for (int i = 0; i < 4; i++) {
+                ROS_INFO("  Point %d: (%.3f, %.3f, %.3f)", i, 
+                        object_points[i].x, object_points[i].y, object_points[i].z);
+            }
+
         }
         
         return true;

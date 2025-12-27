@@ -73,6 +73,7 @@ void ArmorDetect::initParams()
     draw_detect_.e_l_center = nh_.param("draw_detect/e_l_center", true);
     draw_detect_.e_r_center = nh_.param("draw_detect/e_r_center", true);
     draw_detect_.e_label = nh_.param("draw_detect/e_label", true);
+    draw_detect_.e_points = nh_.param("draw_detect/e_points", true);
     draw_detect_.e_light_c = getDrawColor("draw_color/e_light", purple);
     draw_detect_.e_rect_c = getDrawColor("draw_color/e_rect", green);
     draw_detect_.e_l_center_c = getDrawColor("draw_color/e_l_center", yellow);
@@ -344,15 +345,11 @@ std::vector<ArmorDetect::ArmorDescriptor> ArmorDetect::detectArmor(const cv::Mat
             }
         }
     }
-    // 2. 然后，对候选装甲板进行后续验证（如数字识别）
+    // 2. 然后，对候选装甲板进行后续验证
     for (auto &armor : candidate_armors)
     {
-        bool verified = true; // 默认通过
         cv::Mat frontImg = extractFrontImage(image, armor.left_light, armor.right_light, armor.type);
-        if (!verifyArmorWithTemplate(frontImg, armor.type))
-            verified = false;
-        if (verified)
-            final_armors.push_back(armor);
+        if (verifyArmorWithTemplate(frontImg, armor.type)) final_armors.push_back(armor);
     }
     // ==========【修改结束】==========
     return final_armors;
@@ -404,6 +401,30 @@ void ArmorDetect::drawDetections(cv::Mat &image, const std::vector<ArmorDescript
             cv::putText(image, label,
                         cv::Point(armor.bounding_rect.x, armor.bounding_rect.y - 10),
                         cv::FONT_HERSHEY_SIMPLEX, 0.6, text_color, 2);
+        }
+        if(draw_detect_.e_points)
+        {
+            for (size_t i = 0; i < armors.size(); i++) 
+            {
+                    const ArmorDescriptor &armor = armors[i];
+                    // 用不同颜色和数字标记四个顶点
+                    std::vector<cv::Scalar> colors = {
+                        cv::Scalar(255, 0, 0),    // 蓝色 - 左上
+                        cv::Scalar(0, 255, 0),    // 绿色 - 右上
+                        cv::Scalar(0, 0, 255),    // 红色 - 右下
+                        cv::Scalar(255, 255, 0)   // 青色 - 左下
+                    };
+                    std::vector<std::string> labels = {"TL", "TR", "BR", "BL"};
+                    for (int j = 0; j < armor.vertices.size() && j < 4; j++) 
+                    {
+                        // 绘制点
+                        cv::circle(image, armor.vertices[j], 5, colors[j], -1);
+                        // 添加标签
+                        cv::putText(image, labels[j] + "(" + std::to_string(j) + ")",
+                                cv::Point(armor.vertices[j].x + 10, armor.vertices[j].y - 10),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.6, colors[j], 2);
+                    }
+            }
         }
     }
 
@@ -561,7 +582,7 @@ cv::Mat ArmorDetect::extractFrontImage(const cv::Mat &src, const LightDescriptor
         ROS_WARN("extractFrontImage: Empty source image");
         return cv::Mat();
     }
-    // 关键：检查通道数
+    // 检查通道数
     if (src.channels() == 1)
     {
         ROS_WARN("extractFrontImage: Source image is grayscale (1 channel)");
@@ -576,54 +597,41 @@ cv::Mat ArmorDetect::extractFrontImage(const cv::Mat &src, const LightDescriptor
         return cv::Mat();
     }
 
-    // 1. 定义目标图像（正面视图）的尺寸
-    int width, height;
-    if (armor_type == 1)
-    {                // 大装甲板
-        width = 92;  // 大装甲板数字区域宽
-        height = 50; // 高
+    // 1. 使用统一的顶点选择函数
+    std::vector<cv::Point2f> src_points = selectArmorVertices(left_light, right_light);
+    
+    if (src_points.size() != 4)
+    {
+        ROS_WARN("extractFrontImage: Failed to get 4 vertices, got %zu", src_points.size());
+        return cv::Mat();
     }
-    else
-    { // 小装甲板
+    
+    // 2. 定义目标图像尺寸
+    int width, height;
+    if (armor_type == 1)  // 大装甲板
+    {                
+        width = 92;  
+        height = 50; 
+    }
+    else  // 小装甲板
+    { 
         width = 50;
         height = 50;
     }
-
-    // 2. 获取左右灯条的四个顶点（RotatedRect的points按角度顺序给出，需注意）
-    cv::Point2f left_pts[4], right_pts[4];
-    left_light.rect.points(left_pts);
-    right_light.rect.points(right_pts);
-
-    // 3. 【关键】从灯条顶点中选取装甲板的四个角点 (左上，右上，右下，左下)
-    // 注意：points() 输出的顶点顺序依赖于矩形的旋转角度，一个可靠的方法是：
-    // 将顶点按 y 坐标排序，上方的两个点中 x 小的是左上，x 大的是右上。
-    // 下方的两个点中 x 小的是左下，x 大的是右下。
-    // 假设灯条是竖长的，那么对于左侧灯条，我们取它的 “右上”(idx: 1) 和 “右下”(idx: 2) 点作为装甲板的左边界。
-    // 对于右侧灯条，我们取它的 “左上”(idx: 0) 和 “左下”(idx: 3) 点作为装甲板的右边界。
-
-    cv::Point2f src_points[4]; // 源图像四边形
-    cv::Point2f dst_points[4]; // 目标矩形
-
-    // 常用的选取方式（适用于 adjustRect 后 width<height，且角度标准化到 [-90, 90)）：
-    // 左侧灯条：取 points[1] 和 points[2]（靠右的两个点）
-    // 右侧灯条：取 points[0] 和 points[3]（靠左的两个点）
-    src_points[0] = left_pts[1];  // 装甲板左上角 (从左侧灯条的右侧上方取)
-    src_points[1] = right_pts[0]; // 装甲板右上角 (从右侧灯条的左侧上方取)
-    src_points[2] = right_pts[3]; // 装甲板右下角 (从右侧灯条的左侧下方取)
-    src_points[3] = left_pts[2];  // 装甲板左下角 (从左侧灯条的右侧下方取)
-
-    // 4. 定义目标矩形的四个角点（一个规整的矩形）
-    dst_points[0] = cv::Point2f(0, 0);
-    dst_points[1] = cv::Point2f(width, 0);
-    dst_points[2] = cv::Point2f(width, height);
-    dst_points[3] = cv::Point2f(0, height);
-
-    // 5. 计算透视变换矩阵并执行变换
+    
+    // 3. 目标图像的四个角点
+    std::vector<cv::Point2f> dst_points;
+    dst_points.push_back(cv::Point2f(0, 0));           // 左上
+    dst_points.push_back(cv::Point2f(width, 0));       // 右上
+    dst_points.push_back(cv::Point2f(width, height));  // 右下
+    dst_points.push_back(cv::Point2f(0, height));      // 左下
+    
+    // 4. 计算透视变换并执行
     cv::Mat perspective_matrix = cv::getPerspectiveTransform(src_points, dst_points);
     cv::Mat front_img;
     cv::warpPerspective(src, front_img, perspective_matrix, cv::Size(width, height));
-
-    // 6. 转换为灰度图，方便后续模板匹配
+    
+    // 5. 转换为灰度图
     if (front_img.channels() == 3)
     {
         cv::cvtColor(front_img, front_img, cv::COLOR_BGR2GRAY);

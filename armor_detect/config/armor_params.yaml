@@ -62,6 +62,7 @@ draw_detect:
   e_l_center: true
   e_r_center: true
   e_label: true
+  e_points: true
 
 # 绘制函数 - drawDetections - color
 # 标签为敌人颜色，不修改

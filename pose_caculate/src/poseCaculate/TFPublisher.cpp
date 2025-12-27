@@ -42,7 +42,7 @@ void PoseCaculate::publishTfTransform(const cv::Mat &rvec, const cv::Mat &tvec,
         cv::Mat rotation_matrix;
         cv::Rodrigues(rvec, rotation_matrix);
         cv::Mat rotation_matrix_inv = rotation_matrix.t();
-        cv::Mat tvec_inv = -rotation_matrix_inv * tvec;
+        cv::Mat tvec_inv = tvec.clone();
         
         // 3. 创建TransformStamped消息
         geometry_msgs::TransformStamped transform_stamped;
