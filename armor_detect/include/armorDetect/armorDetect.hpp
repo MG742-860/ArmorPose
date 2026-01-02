@@ -82,6 +82,13 @@ private:
         }
     };
 
+    struct armor_real {
+        int big_width;
+        int big_height;
+        int small_width;
+        int small_height;
+    } armor_real_;
+
     // 装甲板描述结构体
     struct ArmorDescriptor {
         LightDescriptor left_light;

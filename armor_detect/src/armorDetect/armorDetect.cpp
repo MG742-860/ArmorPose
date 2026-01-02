@@ -61,10 +61,17 @@ void ArmorDetect::initParams()
     morphology_.morph_open_size = nh_.param("morphology/open_size", 3);
     morphology_.morph_close_size = nh_.param("morphology/close_size", 5);
     morphology_.morph_kernel_size = nh_.param("morphology/kernel_size", 4);
-
+    
+    // 真实装甲板尺寸参数
+    armor_real_.big_width = nh_.param("armor_real/big_width", 138);
+    armor_real_.big_height = nh_.param("armor_real/big_height", 75);
+    armor_real_.small_width = nh_.param("armor_real/small_width", 108);
+    armor_real_.small_height = nh_.param("armor_real/small_height", 100);
+    std::cout << "armor_real_: " << armor_real_.big_width << ", " << armor_real_.big_height << ", "
+              << armor_real_.small_width << ", " << armor_real_.small_height << std::endl;
     // 模板参数
     digit_resize_.big = nh_.param("digit/big", 28);
-    digit_resize_.small = nh_.param("digit/small", 28);
+    digit_resize_.small = nh_.param("digit/small", 70);
     digit_resize_.threshold = nh_.param("digit/threshold", 0.65);
 
     // 打印参数
@@ -74,6 +81,7 @@ void ArmorDetect::initParams()
     draw_detect_.e_r_center = nh_.param("draw_detect/e_r_center", true);
     draw_detect_.e_label = nh_.param("draw_detect/e_label", true);
     draw_detect_.e_points = nh_.param("draw_detect/e_points", true);
+    
     draw_detect_.e_light_c = getDrawColor("draw_color/e_light", purple);
     draw_detect_.e_rect_c = getDrawColor("draw_color/e_rect", green);
     draw_detect_.e_l_center_c = getDrawColor("draw_color/e_l_center", yellow);
@@ -500,10 +508,10 @@ void ArmorDetect::loadTemplates()
                      digit, small_file.c_str(), big_file.c_str());
             continue; // 跳过这个数字，继续加载下一个
         }
-        // 可选：调整大小至统一尺寸（例如28x28）
-        cv::resize(small_tpl, small_tpl, cv::Size(digit_resize_.small, digit_resize_.small));
-        cv::resize(big_tpl, big_tpl, cv::Size(digit_resize_.big, digit_resize_.big));
-        // 可选：确保图像类型为 CV_8UC1（单通道8位），为后续 matchTemplate 做准备
+        // 可选：调整大小至统一尺寸
+        //cv::resize(small_tpl, small_tpl, cv::Size(digit_resize_.small, digit_resize_.small));
+        // cv::resize(big_tpl, big_tpl, cv::Size(digit_resize_.big, digit_resize_.big));
+        // 确保图像类型为 CV_8UC1（单通道8位），为后续 matchTemplate 做准备
         if (small_tpl.type() != CV_8UC1)
             small_tpl.convertTo(small_tpl, CV_8UC1);
         if (big_tpl.type() != CV_8UC1)
@@ -532,7 +540,8 @@ bool ArmorDetect::verifyArmorWithTemplate(const cv::Mat &frontImg, int armorType
 {
     const std::vector<cv::Mat> &templates = (armorType == 0) ? smallArmorTemplates : bigArmorTemplates;
     double maxScore = 0;
-
+    cv::imshow("Front Image", frontImg);
+    cv::waitKey(1);
     // 将正面图像转为灰度并缩放到与模板相同尺寸
     cv::Mat grayFront;
     // 检查输入图像通道数
@@ -610,13 +619,13 @@ cv::Mat ArmorDetect::extractFrontImage(const cv::Mat &src, const LightDescriptor
     int width, height;
     if (armor_type == 1)  // 大装甲板
     {                
-        width = 92;  
-        height = 50; 
+        width = armor_real_.big_width ;
+        height = armor_real_.big_height; 
     }
     else  // 小装甲板
     { 
-        width = 50;
-        height = 50;
+        width = armor_real_.small_width;
+        height = armor_real_.small_height;
     }
     
     // 3. 目标图像的四个角点

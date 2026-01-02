@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+    <rosparam file="$(find armor_detect)/config/armor_params.yaml" command="load"/>
+    <!-- 装甲板检测节点 -->
+    <node pkg="armor_detect" type="detectArmor_node" name="detectArmor_node" output="screen"/>
+</launch>

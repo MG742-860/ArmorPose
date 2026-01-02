@@ -49,11 +49,17 @@ morphology:
   # detectArmor函数
   kernel_size: 4
 
+armor_real:
+  big_width: 276
+  big_height: 150
+  small_width: 108
+  small_height: 100
+
 # 数字缩放目标像素大小 - 正方形
 digit:
   big: 28
-  small: 28
-  threshold: 0.65
+  small: 70
+  threshold: 0.85
 
 # 绘制函数 - drawDetections
 draw_detect:
