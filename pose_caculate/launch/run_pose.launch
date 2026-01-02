@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+    <rosparam file="$(find pose_caculate)/config/pose_caculate.yaml" command="load"/>
+    <node pkg="pose_caculate" type="caculatePose_node" name="caculatePose_node" output="screen"/>
+    
+</launch>

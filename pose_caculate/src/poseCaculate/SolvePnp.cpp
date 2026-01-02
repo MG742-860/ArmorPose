@@ -67,36 +67,7 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Ma
         
         // 获取当前距离
         double current_distance = cv::norm(tvec);
-        
-        // 【新增】跳变检测
-        if (valid_frame_count[armor_id] >= 5 && 
-            !distance_history[armor_id].empty()) {
-            
-            // 计算历史平均距离
-            double avg_distance = 0.0;
-            for (double d : distance_history[armor_id]) {
-                avg_distance += d;
-            }
-            avg_distance /= distance_history[armor_id].size();
-            
-            // 如果当前距离与历史平均相差太大，拒绝这个结果
-            if (fabs(current_distance - avg_distance) > 0.5) {  // 0.5米跳变阈值
-                if (debug_mode_) {
-                    ROS_WARN("[PnP] Armor %d: Distance jump detected (%.3f -> %.3f), rejecting",
-                            armor_id, avg_distance, current_distance);
-                }
-                
-                // 恢复上一次的有效结果
-                if (prev_tvecs.find(armor_id) != prev_tvecs.end()) {
-                    tvec = prev_tvecs[armor_id].clone();
-                    rvec = prev_rvecs[armor_id].clone();
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-        }
-        
+
         // 更新距离历史（保持最近10帧）
         distance_history[armor_id].push_back(current_distance);
         if (distance_history[armor_id].size() > 10) {
@@ -169,68 +140,12 @@ bool PoseCaculate::extractImagePoints(const armor_detect::ArmorInfo &armor,
                                       std::vector<cv::Point2f> &image_points)
 {
     image_points.clear();
-    
-    // 提取原始点
-    std::vector<cv::Point2f> raw_points;
-    for (int i = 0; i < 4; ++i) {
-        cv::Point2f point(armor.vertices_pixel[i].x, armor.vertices_pixel[i].y);
-        raw_points.push_back(point);
+    if(armor.vertices_pixel.size() != 4) return false;
+    for (size_t i = 0; i < 4; i++)
+    {
+        image_points.push_back(cv::Point2f(armor.vertices_pixel[i].x, armor.vertices_pixel[i].y));
     }
-    
-    // 【关键修复】确定正确的顶点顺序
-    // 方法：找到左上、右上、右下、左下的顺序
-    if (raw_points.size() == 4) {
-        // 1. 计算中心点
-        cv::Point2f center(0, 0);
-        for (const auto& p : raw_points) {
-            center += p;
-        }
-        center.x /= 4;
-        center.y /= 4;
-        
-        // 2. 分离左上、右上、右下、左下
-        std::vector<cv::Point2f> top, bottom;
-        
-        for (const auto& p : raw_points) {
-            if (p.y < center.y) {  // y坐标小的是上边
-                top.push_back(p);
-            } else {
-                bottom.push_back(p);
-            }
-        }
-        
-        // 3. 排序：上边按x从小到大，下边按x从大到小
-        if (top.size() == 2 && bottom.size() == 2) {
-            std::sort(top.begin(), top.end(), 
-                     [](const cv::Point2f& a, const cv::Point2f& b) {
-                         return a.x < b.x;  // 左上、右上
-                     });
-            std::sort(bottom.begin(), bottom.end(),
-                     [](const cv::Point2f& a, const cv::Point2f& b) {
-                         return a.x > b.x;  // 右下、左下
-                     });
-            
-            // 4. 按顺序组装：左上 → 右上 → 右下 → 左下
-            image_points.push_back(top[0]);      // 左上
-            image_points.push_back(top[1]);      // 右上
-            image_points.push_back(bottom[0]);   // 右下
-            image_points.push_back(bottom[1]);   // 左下
-            
-            // 调试输出
-            if (debug_mode_) {
-                ROS_INFO("[Extract] Armor %d vertices sorted:", armor.armor_id);
-                ROS_INFO("  TL: (%.1f, %.1f)", image_points[0].x, image_points[0].y);
-                ROS_INFO("  TR: (%.1f, %.1f)", image_points[1].x, image_points[1].y);
-                ROS_INFO("  BR: (%.1f, %.1f)", image_points[2].x, image_points[2].y);
-                ROS_INFO("  BL: (%.1f, %.1f)", image_points[3].x, image_points[3].y);
-            }
-            
-            return true;
-        }
-    }
-    
-    ROS_WARN("[Extract] Failed to sort vertices for armor %d", armor.armor_id);
-    return false;
+    return true;
 }
 
 bool PoseCaculate::validatePoseResult(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id)

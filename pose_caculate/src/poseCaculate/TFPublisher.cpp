@@ -2,11 +2,11 @@
 
 tf2::Quaternion PoseCaculate::rvecToQuaternion(const cv::Mat &rvec)
 {
-    // 【关键修复】直接使用solvePnP返回的旋转矩阵
+    // 使用solvePnP返回的旋转矩阵
     cv::Mat rotation_matrix;
     cv::Rodrigues(rvec, rotation_matrix);
     
-    // 【重要】检查旋转矩阵是否是正交矩阵
+    // 检查旋转矩阵是否是正交矩阵
     cv::Mat test = rotation_matrix * rotation_matrix.t();
     cv::Mat eye = cv::Mat::eye(3, 3, CV_64F);
     double diff = cv::norm(test, eye);
@@ -44,19 +44,9 @@ void PoseCaculate::publishTfTransform(const cv::Mat &rvec, const cv::Mat &tvec,
             ROS_WARN("[TF] Armor %d: Using current time (stamp was 0)", armor_id);
         }
         
-        // 【关键修复】简化坐标变换逻辑
-        // solvePnP返回的tvec已经是装甲板原点在相机坐标系中的坐标
-        // 对于TF变换，平移向量应该是相机坐标系到装甲板坐标系的变换
-        // 也就是 -R^T * tvec，但是这里有更简单的理解方式：
-        
         // 1. 获取旋转矩阵
         cv::Mat rotation_matrix;
         cv::Rodrigues(rvec, rotation_matrix);
-        
-        // 2. 【修复】直接使用solvePnP的tvec，不进行额外的变换
-        // tvec是装甲板原点在相机坐标系中的位置
-        // 对于从相机到装甲板的TF变换，平移应该是-tvec（取反）
-        // 但是这里需要验证方向，我们先尝试最简单的：直接使用-tvec
         
         // 创建TransformStamped消息
         geometry_msgs::TransformStamped transform_stamped;
@@ -68,15 +58,11 @@ void PoseCaculate::publishTfTransform(const cv::Mat &rvec, const cv::Mat &tvec,
         transform_stamped.transform.translation.y = tvec.at<double>(1, 0);
         transform_stamped.transform.translation.z = tvec.at<double>(2, 0);
         
-        // 3. 计算旋转（保持之前的修正）
-        // solvePnP返回的是从装甲板坐标系到相机坐标系的旋转
-        // 对于TF，我们需要从相机坐标系到装甲板坐标系的旋转
-        cv::Mat rotation_matrix_inv = rotation_matrix.t();  // 取转置得到逆旋转
-        
+        // 3. 计算旋转
         tf2::Matrix3x3 tf_matrix(
-            rotation_matrix_inv.at<double>(0, 0), rotation_matrix_inv.at<double>(0, 1), rotation_matrix_inv.at<double>(0, 2),
-            rotation_matrix_inv.at<double>(1, 0), rotation_matrix_inv.at<double>(1, 1), rotation_matrix_inv.at<double>(1, 2),
-            rotation_matrix_inv.at<double>(2, 0), rotation_matrix_inv.at<double>(2, 1), rotation_matrix_inv.at<double>(2, 2)
+            rotation_matrix.at<double>(0, 0), rotation_matrix.at<double>(0, 1), rotation_matrix.at<double>(0, 2),
+            rotation_matrix.at<double>(1, 0), rotation_matrix.at<double>(1, 1), rotation_matrix.at<double>(1, 2),
+            rotation_matrix.at<double>(2, 0), rotation_matrix.at<double>(2, 1), rotation_matrix.at<double>(2, 2)
         );
         
         tf2::Quaternion quaternion;
