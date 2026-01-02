@@ -64,6 +64,15 @@ private:
     std::string parent_frame_id_;
     std::string child_frame_prefix_;
     double tf_cache_time_;
+
+    // TF清理
+    ros::Timer tf_cleanup_timer_;
+    void cleanupOldTf(const ros::TimerEvent& event);
+    std::set<int> active_armor_ids_;
+    ros::Time last_tf_time_;
+
+
+
 public:
     // 构造函数 析构函数
     PoseCaculate(ros::NodeHandle &nh);
@@ -102,6 +111,11 @@ public:
     void publishTfTransform(const cv::Mat &rvec, const cv::Mat &tvec,const ros::Time &stamp, int armor_id, int armor_type);
     // 发布Pose消息
     void publishPoseMessage(const cv::Mat &rvec, const cv::Mat &tvec,const ros::Time &stamp, int armor_id, int armor_type);
+    void printRotationInfo(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
+    void validateCoordinateSystem(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
+    void debugTransform(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);    
+    void verifyCoordinateSystem(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
+    tf2::Quaternion rvecToQuaternionWithCorrection(const cv::Mat &rotation_matrix);
 };
 
 #endif // POSE_CACULATE_HPP

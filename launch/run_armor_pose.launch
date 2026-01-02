@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+    <rosparam file="$(find armor_detect)/config/armor_params.yaml" command="load"/>
+    <!-- 装甲板检测节点 -->
+    <node pkg="armor_detect" type="detectArmor_node" name="detectArmor_node" output="screen"/>
+    <!-- 位姿解算节点 -->
+    <node pkg="pose_caculate" type="caculatePose_node" name="caculatePose_node" output="screen">
+        <!-- 装甲板实际尺寸参数 -->
+        <param name="small_armor_width" type="double" value="0.135" />
+        <param name="small_armor_height" type="double" value="0.055" />
+        <param name="big_armor_width" type="double" value="0.225" />
+        <param name="big_armor_height" type="double" value="0.055" />
+    </node>
+    <!-- 启动动态参数调节GUI -->
+    <!-- <node pkg="rqt_reconfigure" type="rqt_reconfigure" name="rqt_reconfigure" /> -->
+    <!-- 启动rviz -->
+    <arg name="rviz_config" default="$(find pose_caculate)/config/dwa.rviz"/>
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rviz_config)"/>
+</launch>

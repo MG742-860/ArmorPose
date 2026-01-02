@@ -1,143 +1,251 @@
 #include "../../include/poseCaculate/poseCaculate.hpp"
-bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor,cv::Mat &rvec, cv::Mat &tvec)
+
+bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Mat &rvec, cv::Mat &tvec)
 {
     // 1. 提取2D像素点
     std::vector<cv::Point2f> image_points;
-    if (!extractImagePoints(armor, image_points))
-    {
-        ROS_WARN("Failed to extract image points for armor %d", armor.armor_id);
+    if (!extractImagePoints(armor, image_points)) {
+        if (debug_mode_) {
+            ROS_WARN("[PnP] Armor %d: Failed to extract 2D points", armor.armor_id);
+        }
         return false;
     }
     
-    // 2. 获取对应的3D模型点
+    // 2. 获取3D模型点
     std::vector<cv::Point3f> object_points = get3DObjectPoints(armor.armor_type);
     
-    // 3. 调用solvePnP
-    try
-    {
+    // 3. 检查2D点质量
+    cv::RotatedRect min_rect = cv::minAreaRect(image_points);
+    float rect_area = min_rect.size.width * min_rect.size.height;
+    
+    if (rect_area < 100.0) {
+        if (debug_mode_) {
+            ROS_WARN("[PnP] Armor %d: 2D area too small (%.1f)", armor.armor_id, rect_area);
+        }
+        return false;
+    }
+    
+    // 4. 调用solvePnP
+    try {
         bool success = cv::solvePnP(object_points, image_points,
                                     camera_matrix_, dist_coeffs_,
-                                    rvec, tvec, false, pnp_method_);
+                                    rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
         
-        if (!success)
-        {
-            if (debug_mode_)
-            {
-                ROS_WARN("solvePnP failed for armor %d", armor.armor_id);
+        if (!success) {
+            if (debug_mode_) {
+                ROS_WARN("[PnP] Armor %d: solvePnP failed", armor.armor_id);
             }
             return false;
         }
         
-        // 4. 验证结果合理性
-        if (!validatePoseResult(rvec, tvec, armor.armor_id))
-        {
+        // 5. 检查距离合理性
+        double distance = cv::norm(tvec);
+        if (distance > 1000.0) {
+            ROS_WARN("[PnP] Armor %d: Extreme distance %.1fm (rejected)", 
+                     armor.armor_id, distance);
             return false;
         }
         
-        // 5. 计算重投影误差（可选，用于调试）
-        if (debug_mode_)
-        {
-            double reproj_error = calculateReprojectionError(object_points, image_points, rvec, tvec);
-            ROS_DEBUG("Armor %d reprojection error: %.2f pixels", armor.armor_id, reproj_error);
-                for (int i = 0; i < 4; i++) {
-                    ROS_INFO("Point %d: 3D(%.3f, %.3f, %.3f) -> 2D(%.1f, %.1f)", i, 
-                    object_points[i].x, object_points[i].y, object_points[i].z,
-                    image_points[i].x, image_points[i].y);
+        // 6. 验证位姿
+        if (!validatePoseResult(rvec, tvec, armor.armor_id)) {
+            return false;
+        }
+        
+        // 7. 【增强滤波】使用更强的滤波和跳变检测
+        static std::map<int, cv::Mat> prev_tvecs;
+        static std::map<int, cv::Mat> prev_rvecs;
+        static std::map<int, int> valid_frame_count;
+        static std::map<int, std::deque<double>> distance_history;  // 距离历史队列
+        
+        int armor_id = armor.armor_id;
+        
+        // 初始化
+        if (valid_frame_count.find(armor_id) == valid_frame_count.end()) {
+            valid_frame_count[armor_id] = 0;
+            distance_history[armor_id] = std::deque<double>();
+        }
+        
+        // 获取当前距离
+        double current_distance = cv::norm(tvec);
+        
+        // 【新增】跳变检测
+        if (valid_frame_count[armor_id] >= 5 && 
+            !distance_history[armor_id].empty()) {
+            
+            // 计算历史平均距离
+            double avg_distance = 0.0;
+            for (double d : distance_history[armor_id]) {
+                avg_distance += d;
+            }
+            avg_distance /= distance_history[armor_id].size();
+            
+            // 如果当前距离与历史平均相差太大，拒绝这个结果
+            if (fabs(current_distance - avg_distance) > 0.5) {  // 0.5米跳变阈值
+                if (debug_mode_) {
+                    ROS_WARN("[PnP] Armor %d: Distance jump detected (%.3f -> %.3f), rejecting",
+                            armor_id, avg_distance, current_distance);
                 }
-
-            ROS_INFO("=== Armor %d PnP Input ===", armor.armor_id);
-            ROS_INFO("2D Image Points (pixels):");
-            for (int i = 0; i < 4; i++) {
-                ROS_INFO("  Point %d: (%.1f, %.1f)", i, image_points[i].x, image_points[i].y);
+                
+                // 恢复上一次的有效结果
+                if (prev_tvecs.find(armor_id) != prev_tvecs.end()) {
+                    tvec = prev_tvecs[armor_id].clone();
+                    rvec = prev_rvecs[armor_id].clone();
+                    return true;
+                } else {
+                    return false;
+                }
             }
-            ROS_INFO("3D Object Points (meters):");
-            for (int i = 0; i < 4; i++) {
-                ROS_INFO("  Point %d: (%.3f, %.3f, %.3f)", i, 
-                        object_points[i].x, object_points[i].y, object_points[i].z);
+        }
+        
+        // 更新距离历史（保持最近10帧）
+        distance_history[armor_id].push_back(current_distance);
+        if (distance_history[armor_id].size() > 10) {
+            distance_history[armor_id].pop_front();
+        }
+        
+        // 【增强滤波】使用自适应的滤波系数
+        double filter_alpha = 0.5;  // 基础滤波系数
+        
+        // 如果距离变化剧烈，使用更强的滤波
+        if (!distance_history[armor_id].empty() && distance_history[armor_id].size() >= 3) {
+            double last_distance = distance_history[armor_id].back();
+            double second_last = distance_history[armor_id][distance_history[armor_id].size()-2];
+            double distance_change = fabs(last_distance - second_last);
+            
+            if (distance_change > 0.1) {  // 距离变化超过0.1米
+                filter_alpha = 0.7;  // 更强的滤波
+                if (debug_mode_) {
+                    ROS_DEBUG("[PnP] Armor %d: Using stronger filter (alpha=%.1f) due to distance change %.3f",
+                            armor_id, filter_alpha, distance_change);
+                }
             }
-
+        }
+        
+        // 应用滤波
+        if (valid_frame_count[armor_id] >= 5 && 
+            prev_tvecs.find(armor_id) != prev_tvecs.end()) {
+            
+            // 对平移向量滤波
+            cv::Mat filtered_tvec = filter_alpha * tvec + (1.0 - filter_alpha) * prev_tvecs[armor_id];
+            
+            // 【新增】对距离进行独立约束
+            double filtered_distance = cv::norm(filtered_tvec);
+            double original_distance = cv::norm(tvec);
+            
+            // 如果滤波后距离变化太大，限制变化幅度
+            if (fabs(filtered_distance - original_distance) > 0.3) {
+                if (debug_mode_) {
+                    ROS_DEBUG("[PnP] Armor %d: Limiting filter effect (change: %.3f -> %.3f)",
+                            armor_id, original_distance, filtered_distance);
+                }
+                // 使用较小的变化
+                filtered_tvec = 0.8 * tvec + 0.2 * prev_tvecs[armor_id];
+            }
+            
+            tvec = filtered_tvec;
+            rvec = filter_alpha * rvec + (1.0 - filter_alpha) * prev_rvecs[armor_id];
+        }
+        
+        // 更新计数器和历史数据
+        valid_frame_count[armor_id]++;
+        prev_tvecs[armor_id] = tvec.clone();
+        prev_rvecs[armor_id] = rvec.clone();
+        
+        if (debug_mode_) {
+            ROS_DEBUG("[PnP] Armor %d: dist=%.3fm, pos=[%.3f, %.3f, %.3f]",
+                     armor.armor_id, distance,
+                     tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
         }
         
         return true;
     }
-    catch (const cv::Exception &e)
-    {
-        ROS_ERROR("OpenCV exception in solvePnP: %s", e.what());
+    catch (const cv::Exception &e) {
+        ROS_ERROR("[PnP] OpenCV exception: %s", e.what());
         return false;
     }
 }
 
-
-bool PoseCaculate::extractImagePoints(const armor_detect::ArmorInfo &armor,std::vector<cv::Point2f> &image_points)
+bool PoseCaculate::extractImagePoints(const armor_detect::ArmorInfo &armor,
+                                      std::vector<cv::Point2f> &image_points)
 {
-    // 清空输出向量
     image_points.clear();
     
-    // 从消息中提取4个顶点
-    // 点顺序是：左上->右上->右下->左下
-    for (int i = 0; i < 4; ++i)
-    {
-        cv::Point2f point(armor.vertices_pixel[i].x,
-                            armor.vertices_pixel[i].y);
+    // 提取原始点
+    std::vector<cv::Point2f> raw_points;
+    for (int i = 0; i < 4; ++i) {
+        cv::Point2f point(armor.vertices_pixel[i].x, armor.vertices_pixel[i].y);
+        raw_points.push_back(point);
+    }
+    
+    // 【关键修复】确定正确的顶点顺序
+    // 方法：找到左上、右上、右下、左下的顺序
+    if (raw_points.size() == 4) {
+        // 1. 计算中心点
+        cv::Point2f center(0, 0);
+        for (const auto& p : raw_points) {
+            center += p;
+        }
+        center.x /= 4;
+        center.y /= 4;
         
-        // 验证点是否有效（非负坐标）
-        if (point.x < 0 || point.y < 0)
-        {
-            ROS_WARN_THROTTLE(1.0, "Invalid point coordinates for armor %d", 
-                                armor.armor_id);
-            return false;
+        // 2. 分离左上、右上、右下、左下
+        std::vector<cv::Point2f> top, bottom;
+        
+        for (const auto& p : raw_points) {
+            if (p.y < center.y) {  // y坐标小的是上边
+                top.push_back(p);
+            } else {
+                bottom.push_back(p);
+            }
         }
         
-        image_points.push_back(point);
+        // 3. 排序：上边按x从小到大，下边按x从大到小
+        if (top.size() == 2 && bottom.size() == 2) {
+            std::sort(top.begin(), top.end(), 
+                     [](const cv::Point2f& a, const cv::Point2f& b) {
+                         return a.x < b.x;  // 左上、右上
+                     });
+            std::sort(bottom.begin(), bottom.end(),
+                     [](const cv::Point2f& a, const cv::Point2f& b) {
+                         return a.x > b.x;  // 右下、左下
+                     });
+            
+            // 4. 按顺序组装：左上 → 右上 → 右下 → 左下
+            image_points.push_back(top[0]);      // 左上
+            image_points.push_back(top[1]);      // 右上
+            image_points.push_back(bottom[0]);   // 右下
+            image_points.push_back(bottom[1]);   // 左下
+            
+            // 调试输出
+            if (debug_mode_) {
+                ROS_INFO("[Extract] Armor %d vertices sorted:", armor.armor_id);
+                ROS_INFO("  TL: (%.1f, %.1f)", image_points[0].x, image_points[0].y);
+                ROS_INFO("  TR: (%.1f, %.1f)", image_points[1].x, image_points[1].y);
+                ROS_INFO("  BR: (%.1f, %.1f)", image_points[2].x, image_points[2].y);
+                ROS_INFO("  BL: (%.1f, %.1f)", image_points[3].x, image_points[3].y);
+            }
+            
+            return true;
+        }
     }
     
-    // 验证是否有4个点
-    if (image_points.size() != 4)
-    {
-        ROS_ERROR("Expected 4 points, got %zu", image_points.size());
-        return false;
-    }
-    
-    return true;
+    ROS_WARN("[Extract] Failed to sort vertices for armor %d", armor.armor_id);
+    return false;
 }
-
 
 bool PoseCaculate::validatePoseResult(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id)
 {
-    // 检查矩阵是否为空
-    if (rvec.empty() || tvec.empty())
-    {
-        ROS_WARN("Empty rotation or translation vector for armor %d", armor_id);
+    if (rvec.empty() || tvec.empty()) {
+        ROS_WARN("[Validate] Armor %d: Empty rvec/tvec", armor_id);
         return false;
     }
     
-    // 获取距离（Z轴分量）
     double distance = tvec.at<double>(2, 0);
     
-    // 检查距离是否合理
-    if (distance < min_valid_distance_ || distance > max_valid_distance_)
-    {
-        if (debug_mode_)
-        {
-            ROS_WARN("Armor %d distance out of range: %.2f m (min=%.1f, max=%.1f)", 
-                        armor_id, distance, min_valid_distance_, max_valid_distance_);
-        }
-        return false;
-    }
-    
-    // 检查平移向量分量是否在合理范围内
-    double x = tvec.at<double>(0, 0);
-    double y = tvec.at<double>(1, 0);
-    
-    // 假设相机视野在X、Y方向上的最大范围是距离的2倍（tan(45°)=1）
-    double max_xy = distance * 1.5;  // 稍微宽松一点
-    
-    if (fabs(x) > max_xy || fabs(y) > max_xy)
-    {
-        if (debug_mode_)
-        {
-            ROS_WARN("Armor %d position out of FOV: x=%.2f, y=%.2f, z=%.2f", 
-                        armor_id, x, y, distance);
+    if (distance < min_valid_distance_ || distance > max_valid_distance_) {
+        if (debug_mode_) {
+            ROS_WARN("[Validate] Armor %d: Distance %.2fm out of range", 
+                    armor_id, distance);
         }
         return false;
     }
@@ -145,49 +253,17 @@ bool PoseCaculate::validatePoseResult(const cv::Mat &rvec, const cv::Mat &tvec, 
     return true;
 }
 
-
-double PoseCaculate::calculateReprojectionError(const std::vector<cv::Point3f> &object_points,
-                                    const std::vector<cv::Point2f> &image_points,
-                                    const cv::Mat &rvec, const cv::Mat &tvec)
+// 简化打印函数
+void PoseCaculate::printPoseResult(const cv::Mat &rvec, const cv::Mat &tvec, 
+                                   int armor_id, int armor_type)
 {
-    std::vector<cv::Point2f> projected_points;
-    cv::projectPoints(object_points, rvec, tvec, 
-                        camera_matrix_, dist_coeffs_, 
-                        projected_points);
-    
-    double total_error = 0.0;
-    for (size_t i = 0; i < image_points.size(); ++i)
-    {
-        double error = cv::norm(image_points[i] - projected_points[i]);
-        total_error += error;
-    }
-    
-    return total_error / image_points.size();
-}
-
-void PoseCaculate::printPoseResult(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id, int armor_type)
-{
-    // 计算欧几里得距离
     double distance = cv::norm(tvec);
-    
-    // 获取具体坐标
     double x = tvec.at<double>(0, 0);
     double y = tvec.at<double>(1, 0);
     double z = tvec.at<double>(2, 0);
     
-    // 输出结果
-    ROS_INFO("=========================================");
-    ROS_INFO("ARMOR %d (%s)", armor_id, 
-                armor_type == 0 ? "SMALL" : "BIG");
-    ROS_INFO("  Position in camera frame:");
-    ROS_INFO("    X: %7.3f m  (right/left)", x);
-    ROS_INFO("    Y: %7.3f m  (down/up)", y);
-    ROS_INFO("    Z: %7.3f m  (forward)", z);
-    ROS_INFO("  Distance: %7.3f m", distance);
-    ROS_INFO("  Rotation vector:");
-    ROS_INFO("    [%8.5f, %8.5f, %8.5f]", 
-                rvec.at<double>(0, 0), 
-                rvec.at<double>(1, 0), 
-                rvec.at<double>(2, 0));
-    ROS_INFO("=========================================");
+    ROS_INFO("[Result] Armor %d (%s): Pos=[%.3f, %.3f, %.3f]m, Dist=%.3fm",
+            armor_id,
+            armor_type == 0 ? "SMALL" : "BIG",
+            x, y, z, distance);
 }    
