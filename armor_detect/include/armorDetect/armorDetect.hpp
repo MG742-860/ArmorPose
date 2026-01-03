@@ -95,6 +95,7 @@ private:
         LightDescriptor right_light;
         cv::Rect bounding_rect;
         int type; // 0-小装甲板  1-大装甲板
+        int number; // 装甲板数字识别结果
         std::vector<cv::Point2f> vertices;// 四个顶点
         ArmorDescriptor(const LightDescriptor& l, const LightDescriptor& r, int armor_type) 
             : left_light(l), right_light(r), type(armor_type) {
@@ -117,8 +118,12 @@ private:
     } pair_params_;
 
     // 数字模板参数
-    std::vector<cv::Mat> smallArmorTemplates; // 小装甲板数字模板
-    std::vector<cv::Mat> bigArmorTemplates;   // 大装甲板数字模板
+    struct TemplateMatch {
+        int number;
+        cv::Mat image;
+    } ;// 数字模板结构体
+    std::vector<TemplateMatch> smallArmorTemplates; // 小装甲板数字模板
+    std::vector<TemplateMatch> bigArmorTemplates;   // 大装甲板数字模板
     struct digit_resize {
         int big, small;
         double threshold;
@@ -162,7 +167,7 @@ public:
     void adjustRect(cv::RotatedRect& rect);
     // 数字模板匹配
     void loadTemplates();
-    bool verifyArmorWithTemplate(const cv::Mat& frontImg, int armorType);
+    int verifyArmorWithTemplate(const cv::Mat& frontImg, ArmorDescriptor armor);
     cv::Mat extractFrontImage(const cv::Mat& src, const LightDescriptor& left_light, const LightDescriptor& right_light, int armor_type);
 
     // 动态参数

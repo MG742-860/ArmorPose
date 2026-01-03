@@ -172,23 +172,6 @@ std::vector<cv::Point2f> ArmorDetect::selectArmorVertices(const LightDescriptor&
         right_top = right2;
         right_bottom = right1;
     }
-    // 【简单修改】：只增加装甲板高度
-    // 计算灯条平均高度
-    float left_light_height = cv::norm(left_top - left_bottom);
-    float right_light_height = cv::norm(right_top - right_bottom);
-    float avg_light_height = (left_light_height + right_light_height) * 0.8f;
-    
-    // 增加装甲板高度（向上向下各扩展一部分）
-    float height_extension = avg_light_height * 0.0f;  // 增加10%的高度
-
-    // 简单的方法：直接修改y坐标
-    // 顶部点向上移动
-    left_top.y -= height_extension;
-    right_top.y -= height_extension;
-    
-    // 底部点向下移动
-    left_bottom.y += height_extension;
-    right_bottom.y += height_extension;
 
     // 最终顶点顺序：左上 → 右上 → 右下 → 左下
     vertices.push_back(left_top);     // 左上
@@ -220,7 +203,7 @@ void ArmorDetect::pubArmorVertices(std::vector<ArmorDescriptor> detected_armors)
         armor_info.header.frame_id = "camera_optical_frame";
         
         armor_info.armor_type = armor.type;
-        armor_info.armor_id = i;
+        armor_info.armor_id = armor.number;
         
         // 填充四个顶点坐标
         for (int j = 0; j < 4 && j < armor.vertices.size(); j++) 

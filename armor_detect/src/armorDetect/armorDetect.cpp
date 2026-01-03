@@ -357,7 +357,12 @@ std::vector<ArmorDetect::ArmorDescriptor> ArmorDetect::detectArmor(const cv::Mat
     for (auto &armor : candidate_armors)
     {
         cv::Mat frontImg = extractFrontImage(image, armor.left_light, armor.right_light, armor.type);
-        if (verifyArmorWithTemplate(frontImg, armor.type)) final_armors.push_back(armor);
+        int matched_digit = verifyArmorWithTemplate(frontImg, armor);
+        if (matched_digit >= 0) 
+        {
+            armor.number = matched_digit; // 存储匹配到的数字
+            final_armors.push_back(armor);
+        }
     }
     // ==========【修改结束】==========
     return final_armors;
@@ -508,17 +513,15 @@ void ArmorDetect::loadTemplates()
                      digit, small_file.c_str(), big_file.c_str());
             continue; // 跳过这个数字，继续加载下一个
         }
-        // 可选：调整大小至统一尺寸
+        // 可选：调整大小至统一尺寸 - 不建议使用，使用原图片尺寸进行匹配的效果更好
         //cv::resize(small_tpl, small_tpl, cv::Size(digit_resize_.small, digit_resize_.small));
         // cv::resize(big_tpl, big_tpl, cv::Size(digit_resize_.big, digit_resize_.big));
         // 确保图像类型为 CV_8UC1（单通道8位），为后续 matchTemplate 做准备
-        if (small_tpl.type() != CV_8UC1)
-            small_tpl.convertTo(small_tpl, CV_8UC1);
-        if (big_tpl.type() != CV_8UC1)
-            big_tpl.convertTo(big_tpl, CV_8UC1);
+        if (small_tpl.type() != CV_8UC1) small_tpl.convertTo(small_tpl, CV_8UC1);
+        if (big_tpl.type() != CV_8UC1) big_tpl.convertTo(big_tpl, CV_8UC1);
 
-        smallArmorTemplates.push_back(small_tpl);
-        bigArmorTemplates.push_back(big_tpl);
+        smallArmorTemplates.push_back({digit, small_tpl});
+        bigArmorTemplates.push_back({digit, big_tpl});
         loaded_count++;
 
         ROS_DEBUG("[Template] Successfully loaded template for digit %d", digit);
@@ -536,12 +539,10 @@ void ArmorDetect::loadTemplates()
     }
 }
 
-bool ArmorDetect::verifyArmorWithTemplate(const cv::Mat &frontImg, int armorType)
+int ArmorDetect::verifyArmorWithTemplate(const cv::Mat &frontImg, ArmorDescriptor armor)
 {
-    const std::vector<cv::Mat> &templates = (armorType == 0) ? smallArmorTemplates : bigArmorTemplates;
+    const std::vector<TemplateMatch> &templates = (armor.type == 0) ? smallArmorTemplates : bigArmorTemplates;
     double maxScore = 0;
-    cv::imshow("Front Image", frontImg);
-    cv::waitKey(1);
     // 将正面图像转为灰度并缩放到与模板相同尺寸
     cv::Mat grayFront;
     // 检查输入图像通道数
@@ -571,16 +572,24 @@ bool ArmorDetect::verifyArmorWithTemplate(const cv::Mat &frontImg, int armorType
     }
 
     // 与所有模板进行匹配，取最高分
-    for (const auto &tpl : templates)
+    int best_id = 0;
+    double max_val = -1;
+    for (const auto& temp : templates) 
     {
         cv::Mat result;
-        cv::matchTemplate(grayFront, tpl, result, cv::TM_CCOEFF_NORMED);
-        double minVal, maxVal;
-        cv::minMaxLoc(result, &minVal, &maxVal);
-        maxScore = std::max(maxScore, maxVal);
+        cv::matchTemplate(frontImg, temp.image, result, cv::TM_CCOEFF_NORMED);
+        double min_val, current_max_val;
+        cv::minMaxLoc(result, &min_val, &current_max_val);
+        if (current_max_val > max_val) 
+        {
+            max_val = current_max_val;
+            best_id = temp.number;
+        }
     }
+    // 判断最大匹配分数是否超过阈值
+    if (max_val < digit_resize_.threshold) return -1;
     // 判断阈值，例如大于阈值则认为匹配成功（有数字）
-    return maxScore > digit_resize_.threshold;
+    return best_id;
 }
 
 cv::Mat ArmorDetect::extractFrontImage(const cv::Mat &src, const LightDescriptor &left_light, const LightDescriptor &right_light, int armor_type)

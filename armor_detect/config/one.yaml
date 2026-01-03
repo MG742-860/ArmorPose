@@ -11,9 +11,9 @@ dictitems:
   blue_val_max: 255
   blue_val_min: 50
   brightness_thresh: 150
-  digit_big: 250
-  digit_small: 28
-  digit_threshold: 0.87
+  digit_big: 20
+  digit_small: 20
+  digit_threshold: 0.88
   draw_color_e_l_center: 4
   draw_color_e_light: 7
   draw_color_e_r_center: 3
@@ -39,9 +39,9 @@ dictitems:
       blue_val_max: 255
       blue_val_min: 50
       brightness_thresh: 150
-      digit_big: 250
-      digit_small: 28
-      digit_threshold: 0.87
+      digit_big: 20
+      digit_small: 20
+      digit_threshold: 0.88
       draw_color_e_l_center: 4
       draw_color_e_light: 7
       draw_color_e_r_center: 3
