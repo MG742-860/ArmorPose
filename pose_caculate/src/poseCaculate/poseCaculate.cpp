@@ -14,7 +14,7 @@ PoseCaculate::PoseCaculate(ros::NodeHandle &nh) : nh_(nh)
     armor_sub_ = nh_.subscribe("/ArmorDetect/armors", 10, &PoseCaculate::armorCallback, this);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>();
     pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/armor_pose", 10);
-    tf_cleanup_timer_ = nh_.createTimer(ros::Duration(1.0),&PoseCaculate::cleanupOldTf, this);
+    tf_cleanup_timer_ = nh_.createTimer(ros::Duration(0.01),&PoseCaculate::cleanupOldTf, this);
     // 4. 生成3D模型点
     generate3DPoints();
     ROS_INFO("PoseCaculate initialized successfully");
@@ -26,10 +26,10 @@ PoseCaculate::PoseCaculate(ros::NodeHandle &nh) : nh_(nh)
 void PoseCaculate::loadParameters()
 {
     // 装甲板尺寸
-    small_armor_width_ = nh_.param("small_armor_width", 0.230);
-    small_armor_height_ = nh_.param("small_armor_height", 0.127);
-    big_armor_width_ = nh_.param("big_armor_width", 0.330);
-    big_armor_height_ = nh_.param("big_armor_height", 0.127);
+    small_armor_width_ = nh_.param("small_armor_width", 0.135);
+    small_armor_height_ = nh_.param("small_armor_height", 0.060);
+    big_armor_width_ = nh_.param("big_armor_width", 0.230);
+    big_armor_height_ = nh_.param("big_armor_height", 0.060);
     
     // PnP配置
     pnp_method_ = nh_.param("pnp_method", 1);
@@ -205,7 +205,7 @@ void PoseCaculate::cleanupOldTf(const ros::TimerEvent& event)
     
     ros::Time now = ros::Time::now();
     
-    // 简单的过期清理：如果超过2秒没更新，从活动列表中移除
+    // 如果超过2秒没更新，从活动列表中移除
     if ((now - last_tf_time_).toSec() > 2.0) {
         active_armor_ids_.clear();
         if (debug_mode_) {

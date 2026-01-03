@@ -14,10 +14,9 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Ma
     // 2. 获取3D模型点
     std::vector<cv::Point3f> object_points = get3DObjectPoints(armor.armor_type);
     
-    // 3. 检查2D点质量
+    // 3. 检查2D点面积
     cv::RotatedRect min_rect = cv::minAreaRect(image_points);
     float rect_area = min_rect.size.width * min_rect.size.height;
-    
     if (rect_area < 100.0) {
         if (debug_mode_) {
             ROS_WARN("[PnP] Armor %d: 2D area too small (%.1f)", armor.armor_id, rect_area);
@@ -26,111 +25,66 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Ma
     }
     
     // 4. 调用solvePnP
-    try {
+    try 
+    {
         bool success = cv::solvePnP(object_points, image_points,
                                     camera_matrix_, dist_coeffs_,
                                     rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
         
-        if (!success) {
-            if (debug_mode_) {
+        if (!success) 
+        {
+            if (debug_mode_) 
+            {
                 ROS_WARN("[PnP] Armor %d: solvePnP failed", armor.armor_id);
             }
             return false;
         }
         
         // 5. 检查距离合理性
-        double distance = cv::norm(tvec);
-        if (distance > 1000.0) {
-            ROS_WARN("[PnP] Armor %d: Extreme distance %.1fm (rejected)", 
-                     armor.armor_id, distance);
+        double current_distance = cv::norm(tvec);
+        if (current_distance < min_valid_distance_ || current_distance > max_valid_distance_) 
+        {
             return false;
         }
         
         // 6. 验证位姿
-        if (!validatePoseResult(rvec, tvec, armor.armor_id)) {
+        if (!validatePoseResult(rvec, tvec, armor.armor_id)) 
+        {
             return false;
         }
         
-        // 7. 【增强滤波】使用更强的滤波和跳变检测
-        static std::map<int, cv::Mat> prev_tvecs;
-        static std::map<int, cv::Mat> prev_rvecs;
-        static std::map<int, int> valid_frame_count;
-        static std::map<int, std::deque<double>> distance_history;  // 距离历史队列
-        
-        int armor_id = armor.armor_id;
-        
-        // 初始化
-        if (valid_frame_count.find(armor_id) == valid_frame_count.end()) {
-            valid_frame_count[armor_id] = 0;
-            distance_history[armor_id] = std::deque<double>();
-        }
-        
-        // 获取当前距离
-        double current_distance = cv::norm(tvec);
+        static std::map<int, cv::Mat> last_tvecs;
+        static std::map<int, cv::Mat> last_rvecs;
+        int id = armor.armor_id;
 
-        // 更新距离历史（保持最近10帧）
-        distance_history[armor_id].push_back(current_distance);
-        if (distance_history[armor_id].size() > 10) {
-            distance_history[armor_id].pop_front();
-        }
-        
-        // 【增强滤波】使用自适应的滤波系数
-        double filter_alpha = 0.5;  // 基础滤波系数
-        
-        // 如果距离变化剧烈，使用更强的滤波
-        if (!distance_history[armor_id].empty() && distance_history[armor_id].size() >= 3) {
-            double last_distance = distance_history[armor_id].back();
-            double second_last = distance_history[armor_id][distance_history[armor_id].size()-2];
-            double distance_change = fabs(last_distance - second_last);
+        if (last_tvecs.find(id) != last_tvecs.end()) {
+            double move_dist = cv::norm(tvec - last_tvecs[id]);
             
-            if (distance_change > 0.1) {  // 距离变化超过0.1米
-                filter_alpha = 0.7;  // 更强的滤波
-                if (debug_mode_) {
-                    ROS_DEBUG("[PnP] Armor %d: Using stronger filter (alpha=%.1f) due to distance change %.3f",
-                            armor_id, filter_alpha, distance_change);
+            if (move_dist < 1.0) { // 正常运动范围
+                // --- 自适应 Alpha ---
+                // 距离 2m 时 alpha 约 0.7 (较灵敏)
+                // 距离 4m 时 alpha 约 0.3 (极度平滑)
+                double alpha = 1.0 - (current_distance / 6.0); 
+                alpha = std::max(0.2, std::min(0.8, alpha)); // 限制范围在 0.2 ~ 0.8
+                
+                // 如果是大装甲板，额外增强平滑度
+                if (armor.armor_type == 1) { 
+                    alpha *= 0.7; 
                 }
+
+                tvec = alpha * tvec + (1.0 - alpha) * last_tvecs[id];
+                rvec = alpha * rvec + (1.0 - alpha) * last_rvecs[id];
             }
+            // 如果 move_dist 过大，说明是新目标或跳变，直接更新不滤波
         }
         
-        // 应用滤波
-        if (valid_frame_count[armor_id] >= 5 && 
-            prev_tvecs.find(armor_id) != prev_tvecs.end()) {
-            
-            // 对平移向量滤波
-            cv::Mat filtered_tvec = filter_alpha * tvec + (1.0 - filter_alpha) * prev_tvecs[armor_id];
-            
-            // 【新增】对距离进行独立约束
-            double filtered_distance = cv::norm(filtered_tvec);
-            double original_distance = cv::norm(tvec);
-            
-            // 如果滤波后距离变化太大，限制变化幅度
-            if (fabs(filtered_distance - original_distance) > 0.3) {
-                if (debug_mode_) {
-                    ROS_DEBUG("[PnP] Armor %d: Limiting filter effect (change: %.3f -> %.3f)",
-                            armor_id, original_distance, filtered_distance);
-                }
-                // 使用较小的变化
-                filtered_tvec = 0.8 * tvec + 0.2 * prev_tvecs[armor_id];
-            }
-            
-            tvec = filtered_tvec;
-            rvec = filter_alpha * rvec + (1.0 - filter_alpha) * prev_rvecs[armor_id];
-        }
-        
-        // 更新计数器和历史数据
-        valid_frame_count[armor_id]++;
-        prev_tvecs[armor_id] = tvec.clone();
-        prev_rvecs[armor_id] = rvec.clone();
-        
-        if (debug_mode_) {
-            ROS_DEBUG("[PnP] Armor %d: dist=%.3fm, pos=[%.3f, %.3f, %.3f]",
-                     armor.armor_id, distance,
-                     tvec.at<double>(0), tvec.at<double>(1), tvec.at<double>(2));
-        }
+        // 更新历史记录
+        last_tvecs[id] = tvec.clone();
+        last_rvecs[id] = rvec.clone();
         
         return true;
-    }
-    catch (const cv::Exception &e) {
+    }catch (const cv::Exception &e) 
+    {
         ROS_ERROR("[PnP] OpenCV exception: %s", e.what());
         return false;
     }

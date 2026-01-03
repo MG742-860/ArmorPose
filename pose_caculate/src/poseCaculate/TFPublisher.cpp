@@ -52,7 +52,7 @@ void PoseCaculate::publishTfTransform(const cv::Mat &rvec, const cv::Mat &tvec,
         geometry_msgs::TransformStamped transform_stamped;
         transform_stamped.header.stamp = transform_stamp;
         transform_stamped.header.frame_id = parent_frame_id_;
-        transform_stamped.child_frame_id = child_frame_prefix_ + std::to_string(armor_id);
+        transform_stamped.child_frame_id = child_frame_prefix_ + (armor_type == 1 ? "big_armor_" : "small_armor_") + std::to_string(armor_id);
 
         transform_stamped.transform.translation.x = tvec.at<double>(0, 0);
         transform_stamped.transform.translation.y = tvec.at<double>(1, 0);
