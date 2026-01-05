@@ -122,7 +122,6 @@ bool PoseCaculate::validatePoseResult(const cv::Mat &rvec, const cv::Mat &tvec, 
     return true;
 }
 
-// 简化打印函数
 void PoseCaculate::printPoseResult(const cv::Mat &rvec, const cv::Mat &tvec, 
                                    int armor_id, int armor_type)
 {

@@ -211,45 +211,6 @@ bool ArmorDetect::convertImage(const sensor_msgs::ImageConstPtr &img_msg, cv::Ma
     }
 }
 
-cv::Mat ArmorDetect::colorSegmentation(const cv::Mat &hsv_image)
-{
-    cv::Mat mask;
-    if (enemy_color_ == 0)
-    {
-        // 检测红色 - 两个范围
-        cv::Mat mask1, mask2;
-        cv::inRange(hsv_image,
-                    cv::Scalar(red_thresh_.hue_min, red_thresh_.sat_min, red_thresh_.val_min),
-                    cv::Scalar(red_thresh_.hue_max, red_thresh_.sat_max, red_thresh_.val_max),
-                    mask1);
-        cv::inRange(hsv_image,
-                    cv::Scalar(170, red_thresh_.sat_min, red_thresh_.val_min),
-                    cv::Scalar(180, red_thresh_.sat_max, red_thresh_.val_max),
-                    mask2);
-        mask = mask1 | mask2;
-    }
-    else
-    {
-        // 检测蓝色
-        cv::inRange(hsv_image,
-                    cv::Scalar(blue_thresh_.hue_min, blue_thresh_.sat_min, blue_thresh_.val_min),
-                    cv::Scalar(blue_thresh_.hue_max, blue_thresh_.sat_max, blue_thresh_.val_max),
-                    mask);
-    }
-    // 形态学操作：去除噪声
-    if (morphology_.morph_open_size > 0)
-    {
-        cv::Mat kernel_open = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(morphology_.morph_open_size, morphology_.morph_open_size));
-        cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel_open);
-    }
-
-    if (morphology_.morph_close_size > 0)
-    {
-        cv::Mat kernel_close = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(morphology_.morph_close_size, morphology_.morph_close_size));
-        cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel_close);
-    }
-    return mask;
-}
 std::vector<ArmorDetect::ArmorDescriptor> ArmorDetect::detectArmor(const cv::Mat &image)
 {
     std::vector<ArmorDescriptor> final_armors;

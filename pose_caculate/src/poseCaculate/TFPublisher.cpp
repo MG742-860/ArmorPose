@@ -128,6 +128,11 @@ void PoseCaculate::publishPoseMessage(const cv::Mat &rvec, const cv::Mat &tvec,
     }
 }
 
+
+//====================================================================================================
+// 调试和验证函数，初期开发阶段使用，关闭debugmode后可忽略
+//====================================================================================================
+
 void PoseCaculate::printRotationInfo(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id)
 {
     if (!debug_mode_) return;

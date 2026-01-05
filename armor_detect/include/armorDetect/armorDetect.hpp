@@ -156,8 +156,6 @@ public:
     void imageCallback(const sensor_msgs::ImageConstPtr& img_msg, const sensor_msgs::CameraInfoConstPtr& info_msg);
     // 将图片格式进行转化
     bool convertImage(const sensor_msgs::ImageConstPtr& img_msg, cv::Mat& output_image);
-    // 颜色分割
-    cv::Mat colorSegmentation(const cv::Mat& hsv_image);
     // 核心检测函数 - 现在返回装甲板向量
     // 建议阅读：https://blog.csdn.net/u010750137/article/details/96428059
     std::vector<ArmorDescriptor> detectArmor(const cv::Mat& image);

@@ -6,8 +6,6 @@ PoseCaculate::PoseCaculate(ros::NodeHandle &nh) : nh_(nh)
     
     // 1. 从参数服务器加载参数
     loadParameters();
-
-
     // 2. 订阅相机信息（单次）
     camera_info_sub_ = nh_.subscribe("/hk_camera/camera_info", 1, &PoseCaculate::cameraInfoCallback, this);
     // 3. 订阅装甲板检测结果
@@ -16,11 +14,9 @@ PoseCaculate::PoseCaculate(ros::NodeHandle &nh) : nh_(nh)
     pose_pub_ = nh_.advertise<geometry_msgs::PoseStamped>("/armor_pose", 10);
     tf_cleanup_timer_ = nh_.createTimer(ros::Duration(0.01),&PoseCaculate::cleanupOldTf, this);
     // 4. 生成3D模型点
-    generate3DPoints();
+    generate3DPoints();// 装甲板不会变，可以复用，只需生成一次
     ROS_INFO("PoseCaculate initialized successfully");
     ROS_INFO("Waiting for camera info...");
-    // =============
-
 }
 
 void PoseCaculate::loadParameters()
@@ -95,11 +91,8 @@ void PoseCaculate::cameraInfoCallback(const sensor_msgs::CameraInfoConstPtr &msg
 }
 
 void PoseCaculate::generate3DPoints()
-{
-    // 【关键修复】重新定义3D模型点的坐标系方向
-    // 假设装甲板坐标系：X轴向右，Y轴向下，Z轴向前（朝向装甲板前方）
-    // 但solvePnP需要的是：装甲板平面在Z=0平面上，X向右，Y向上
-    
+{    
+    // 小装甲板3D点
     double sw2 = small_armor_width_ / 2;
     double sh2 = small_armor_height_ / 2;
     
