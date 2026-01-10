@@ -18,6 +18,8 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_geometry_msgs
   tf2_ros
   armor_detect
+  image_transport
+  geometry_msgs
 )
 
 ## System dependencies are found with CMake's conventions
@@ -112,8 +114,8 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES pose_caculate
-#  CATKIN_DEPENDS cv_bridge message_filters roscpp rospy sensor_msgs std_msgs tf2 tf2_geometry_msgs tf2_ros
-#  DEPENDS system_lib
+   CATKIN_DEPENDS cv_bridge message_filters roscpp rospy sensor_msgs std_msgs tf2 tf2_geometry_msgs tf2_ros image_transport armor_detect message_runtime 
+   DEPENDS system_lib
 )
 
 ###########

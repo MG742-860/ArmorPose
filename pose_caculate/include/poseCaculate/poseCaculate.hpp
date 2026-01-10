@@ -24,6 +24,10 @@
 #include <armor_detect/ArmorArray.h>
 #include <armor_detect/ArmorInfo.h>
 
+#include <image_transport/image_transport.h>
+#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/image_encodings.h>
+#include <mutex>
 class PoseCaculate
 {
 private:
@@ -71,7 +75,13 @@ private:
     std::set<int> active_armor_ids_;
     ros::Time last_tf_time_;
 
-
+    // 可选：原图绘制坐标轴
+    image_transport::ImageTransport it_;
+    image_transport::CameraSubscriber image_sub_;
+    image_transport::Publisher image_pub_;
+    cv::Mat current_image_; // 缓存当前图像
+    std::mutex img_mutex_;
+    bool axis_drawn_ = false;
 
 public:
     // 构造函数 析构函数
@@ -116,6 +126,10 @@ public:
     void debugTransform(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);    
     void verifyCoordinateSystem(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
     tf2::Quaternion rvecToQuaternionWithCorrection(const cv::Mat &rotation_matrix);
+
+    // 绘制坐标轴到图像上（可选）
+    void drawCoordinateAxis(cv::Mat &img, const cv::Mat &rvec, const cv::Mat &tvec);
+    void imageCallback(const sensor_msgs::ImageConstPtr &img_msg, const sensor_msgs::CameraInfoConstPtr &info_msg);
 };
 
 #endif // POSE_CACULATE_HPP

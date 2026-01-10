@@ -1,6 +1,6 @@
 #include "../../include/poseCaculate/poseCaculate.hpp"
 
-PoseCaculate::PoseCaculate(ros::NodeHandle &nh) : nh_(nh)
+PoseCaculate::PoseCaculate(ros::NodeHandle &nh) : nh_(nh), it_(nh_)
 {
     ROS_INFO("Initializing PoseCaculate...");
     
@@ -15,6 +15,13 @@ PoseCaculate::PoseCaculate(ros::NodeHandle &nh) : nh_(nh)
     tf_cleanup_timer_ = nh_.createTimer(ros::Duration(0.01),&PoseCaculate::cleanupOldTf, this);
     // 4. 生成3D模型点
     generate3DPoints();// 装甲板不会变，可以复用，只需生成一次
+
+    // 5. 可选：图像订阅与发布（用于调试绘制坐标轴）
+    image_transport::TransportHints hints("compressed");
+    // image_sub_ = it_.subscribeCamera("/hk_camera/image_raw", 10, &PoseCaculate::imageCallback, this, hints);
+    image_sub_ = it_.subscribeCamera("/hk_camera/image_raw", 10, &PoseCaculate::imageCallback, this, hints);
+    image_pub_ = it_.advertise("/pose_calculate/debug_image", 1);
+    
     ROS_INFO("PoseCaculate initialized successfully");
     ROS_INFO("Waiting for camera info...");
 }
@@ -161,6 +168,22 @@ void PoseCaculate::armorCallback(const armor_detect::ArmorArrayConstPtr &armor_m
         ROS_INFO("  [%d]: (%.1f, %.1f)", i, 
                  armor_msg->armors[0].vertices_pixel[i].x, armor_msg->armors[0].vertices_pixel[i].y);
     }
+
+    // ========================================
+    cv::Mat debug_image;
+    {
+        std::lock_guard<std::mutex> lock(img_mutex_);
+        // 如果当前没有图像，直接返回，不继续执行
+        if (current_image_.empty()) {
+            // 可以选择打印一次警告，或者直接忽略
+            return; 
+        }
+        // 深拷贝一份图像用于绘制，避免影响原始数据或被其他线程修改
+        debug_image = current_image_.clone();
+    }
+    if (debug_image.empty()) return;
+    // ========================================
+
     // 处理每个装甲板
     int success_count = 0;
     for (size_t i = 0; i < armor_msg->armors.size(); ++i) {
@@ -170,22 +193,34 @@ void PoseCaculate::armorCallback(const armor_detect::ArmorArrayConstPtr &armor_m
         if (solvePnPForArmor(armor, rvec, tvec)) {
             success_count++;
             
-            if (print_results_) {
+            if (print_results_) 
+            {
                 printPoseResult(rvec, tvec, armor.armor_id, armor.armor_type);
             }
             
-            if (publish_tf_ && tf_broadcaster_) {
+            if (publish_tf_ && tf_broadcaster_) 
+            {
                 publishTfTransform(rvec, tvec, armor_msg->header.stamp, 
                                   armor.armor_id, armor.armor_type);
             }
             
-            if (publish_pose_messages_) {
+            if (publish_pose_messages_) 
+            {
                 publishPoseMessage(rvec, tvec, armor_msg->header.stamp,
                                   armor.armor_id, armor.armor_type);
             }
+
+            drawCoordinateAxis(debug_image, rvec, tvec);
+
         }
     }
-    
+
+    if (image_pub_.getNumSubscribers() > 0) 
+    {
+        sensor_msgs::ImagePtr out_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", debug_image).toImageMsg();
+        out_msg->header.stamp = ros::Time::now(); // 更新时间戳
+        image_pub_.publish(out_msg);
+    }
     if (debug_mode_ && success_count > 0) {
         ROS_DEBUG("[PnP] Frame processed: %d/%zu armors solved",
                  success_count, armor_msg->armors.size());
