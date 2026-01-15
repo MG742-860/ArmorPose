@@ -36,12 +36,14 @@ void PoseCaculate::loadParameters()
     
     // PnP配置
     pnp_method_ = nh_.param("pnp_method", 1);
+    enable_filter_ = nh_.param("enable_filter", true);
     
     // 调试选项
     debug_mode_ = nh_.param("debug_mode", true);
     print_results_ = nh_.param("print_results", true);
     min_valid_distance_ = nh_.param("min_valid_distance", 0.2);
     max_valid_distance_ = nh_.param("max_valid_distance", 10.0);
+    axis_drawn_ = nh_.param("axis_drawn", true);
     
     // TF配置
     nh_.param("publish_tf", publish_tf_, true);
@@ -169,21 +171,6 @@ void PoseCaculate::armorCallback(const armor_detect::ArmorArrayConstPtr &armor_m
                  armor_msg->armors[0].vertices_pixel[i].x, armor_msg->armors[0].vertices_pixel[i].y);
     }
 
-    // ========================================
-    cv::Mat debug_image;
-    {
-        std::lock_guard<std::mutex> lock(img_mutex_);
-        // 如果当前没有图像，直接返回，不继续执行
-        if (current_image_.empty()) {
-            // 可以选择打印一次警告，或者直接忽略
-            return; 
-        }
-        // 深拷贝一份图像用于绘制，避免影响原始数据或被其他线程修改
-        debug_image = current_image_.clone();
-    }
-    if (debug_image.empty()) return;
-    // ========================================
-
     // 处理每个装甲板
     int success_count = 0;
     for (size_t i = 0; i < armor_msg->armors.size(); ++i) {
@@ -210,17 +197,10 @@ void PoseCaculate::armorCallback(const armor_detect::ArmorArrayConstPtr &armor_m
                                   armor.armor_id, armor.armor_type);
             }
 
-            drawCoordinateAxis(debug_image, rvec, tvec);
-
+            if(axis_drawn_) pub_debug_image(rvec, tvec);
         }
     }
 
-    if (image_pub_.getNumSubscribers() > 0) 
-    {
-        sensor_msgs::ImagePtr out_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", debug_image).toImageMsg();
-        out_msg->header.stamp = ros::Time::now(); // 更新时间戳
-        image_pub_.publish(out_msg);
-    }
     if (debug_mode_ && success_count > 0) {
         ROS_DEBUG("[PnP] Frame processed: %d/%zu armors solved",
                  success_count, armor_msg->armors.size());

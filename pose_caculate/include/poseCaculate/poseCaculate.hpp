@@ -55,6 +55,7 @@ private:
     
     // PnP配置
     int pnp_method_;
+    bool enable_filter_;
     
     // 调试和验证
     bool debug_mode_;
@@ -106,10 +107,6 @@ public:
     bool extractImagePoints(const armor_detect::ArmorInfo &armor,std::vector<cv::Point2f> &image_points);
     // 验证位姿结果的合理性
     bool validatePoseResult(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
-    // 计算重投影误差
-    double calculateReprojectionError(const std::vector<cv::Point3f> &object_points,
-                                     const std::vector<cv::Point2f> &image_points,
-                                     const cv::Mat &rvec, const cv::Mat &tvec);
     // 结果输出 
     void printPoseResult(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id, int armor_type); 
 
@@ -124,10 +121,9 @@ public:
     void printRotationInfo(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
     void validateCoordinateSystem(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
     void debugTransform(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);    
-    void verifyCoordinateSystem(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);
-    tf2::Quaternion rvecToQuaternionWithCorrection(const cv::Mat &rotation_matrix);
 
     // 绘制坐标轴到图像上（可选）
+    void pub_debug_image(const cv::Mat &rvecs, const cv::Mat &tvecs);
     void drawCoordinateAxis(cv::Mat &img, const cv::Mat &rvec, const cv::Mat &tvec);
     void imageCallback(const sensor_msgs::ImageConstPtr &img_msg, const sensor_msgs::CameraInfoConstPtr &info_msg);
 };

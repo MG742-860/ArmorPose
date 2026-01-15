@@ -39,26 +39,27 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Ma
             }
             return false;
         }
+        cv::Mat filter_rvec = rvec.clone();
+        cv::Mat filter_tvec = tvec.clone();
         
         // 5. 检查距离合理性
-        double current_distance = cv::norm(tvec);
+        double current_distance = cv::norm(filter_tvec);
         if (current_distance < min_valid_distance_ || current_distance > max_valid_distance_) 
         {
             return false;
         }
         
         // 6. 验证位姿
-        if (!validatePoseResult(rvec, tvec, armor.armor_id)) 
+        if (!validatePoseResult(filter_rvec, filter_tvec, armor.armor_id)) 
         {
             return false;
         }
-        
         static std::map<int, cv::Mat> last_tvecs;
         static std::map<int, cv::Mat> last_rvecs;
         int id = armor.armor_id;
 
-        if (last_tvecs.find(id) != last_tvecs.end()) {
-            double move_dist = cv::norm(tvec - last_tvecs[id]);
+        if (last_tvecs.find(id) != last_tvecs.end() && enable_filter_) {
+            double move_dist = cv::norm(filter_tvec - last_tvecs[id]);
             
             if (move_dist < 1.0) { // 正常运动范围
                 // --- 自适应 Alpha ---
@@ -72,16 +73,16 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Ma
                     alpha *= 0.7; 
                 }
 
-                tvec = alpha * tvec + (1.0 - alpha) * last_tvecs[id];
-                rvec = alpha * rvec + (1.0 - alpha) * last_rvecs[id];
+                filter_tvec = alpha * filter_tvec + (1.0 - alpha) * last_tvecs[id];
+                filter_rvec = alpha * filter_rvec + (1.0 - alpha) * last_rvecs[id];
             }
             // 如果 move_dist 过大，说明是新目标或跳变，直接更新不滤波
         }
         
         // 更新历史记录
-        last_tvecs[id] = tvec.clone();
-        last_rvecs[id] = rvec.clone();
-        
+        last_tvecs[id] = filter_tvec.clone();
+        last_rvecs[id] = filter_rvec.clone();
+
         return true;
     }catch (const cv::Exception &e) 
     {

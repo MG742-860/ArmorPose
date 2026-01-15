@@ -8,6 +8,10 @@ pnp_method: 0
 
 debug_mode: false
 print_results: true
+draw_axis: true
+enable_filter: true
+# 可调节滤波时间常数，值越小滤波效果越明显
+# filter_time_constant: 0.2
 
 min_valid_distance: 0.2
 max_valid_distance: 10.0
