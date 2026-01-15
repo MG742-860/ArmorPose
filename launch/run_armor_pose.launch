@@ -3,8 +3,8 @@
     <include file="$(find armor_detect)/launch/run_armor.launch"/>
     <include file="$(find pose_caculate)/launch/run_pose.launch"/>
     <!-- rqt -->
-    <node pkg="rqt" type="rqt" name="rqt" />
+    <!-- <node pkg="rqt" type="rqt" name="rqt" /> -->
     <!-- 启动rviz -->
-    <arg name="rviz_config" default="$(find pose_caculate)/config/dwa.rviz"/>
-    <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rviz_config)"/>
+    <!-- <arg name="rviz_config" default="$(find pose_caculate)/config/dwa.rviz"/>
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rviz_config)"/> -->
 </launch>
