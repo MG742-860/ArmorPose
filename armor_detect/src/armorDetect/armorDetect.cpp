@@ -51,7 +51,7 @@ void ArmorDetect::initParams()
     pair_params_.light_min_x_diff_ratio = nh_.param("pair/light_min_x_diff_ratio", 0.5);
     pair_params_.armor_min_aspect_ratio = nh_.param("pair/armor_min_aspect_ratio", 0.8);
     pair_params_.armor_max_aspect_ratio = nh_.param("pair/armor_max_aspect_ratio", 4.5);
-    pair_params_.armor_big_armor_ratio = nh_.param("pair/armor_big_armor_ratio", 3.2);
+    pair_params_.armor_big_armor_ratio = nh_.param("pair/armor_big_armor_ratio", 2.6);
     pair_params_.armor_small_armor_ratio = nh_.param("pair/armor_small_armor_ratio", 2.0);
 
     // 预处理参数
@@ -263,10 +263,7 @@ std::vector<ArmorDetect::ArmorDescriptor> ArmorDetect::detectArmor(const cv::Mat
     std::sort(light_infos.begin(), light_infos.end(),
               [](const LightDescriptor &ld1, const LightDescriptor &ld2)
               { return ld1.center.x < ld2.center.x; });
-    // 装甲板识别：先前的版本中添加了数字模板匹配，但是逻辑有问题：识别装甲板时直接匹配数字，如果匹配数字时报错/崩溃，整个循环就会被破坏掉
-    // 参考CSDN，修改如下：
-    // ==========【核心修改部分】==========
-    // 1. 首先，仅基于几何约束进行灯条配对，生成所有“候选装甲板”
+
     std::vector<ArmorDescriptor> candidate_armors;
     for (size_t i = 0; i < light_infos.size(); i++)
     {
@@ -300,11 +297,6 @@ std::vector<ArmorDetect::ArmorDescriptor> ArmorDetect::detectArmor(const cv::Mat
                 continue;
             // 确定装甲板类型（大小装甲板）
             int armor_type = (aspect_ratio > pair_params_.armor_big_armor_ratio) ? 1 : 0;
-            // ==========================================================================
-            // 【修改点】不再在此处立即进行模板验证，先生成候选装甲板
-            // cv::Mat frontImg = extractFrontImage(image, left_light, right_light, armor_type);
-            // if(!verifyArmorWithTemplate(frontImg, armor_type)) continue;
-            // ==========================================================================
             // 添加到候选列表
             if(armor_type == enemy_type_ || enemy_type_ == 2)
             {
@@ -325,7 +317,6 @@ std::vector<ArmorDetect::ArmorDescriptor> ArmorDetect::detectArmor(const cv::Mat
             final_armors.push_back(armor);
         }
     }
-    // ==========【修改结束】==========
     return final_armors;
 }
 
@@ -431,7 +422,6 @@ void ArmorDetect::adjustRect(cv::RotatedRect &rect)
         rect.angle -= 180.0;
 }
 
-// ============================================================
 void ArmorDetect::loadTemplates()
 {
     smallArmorTemplates.clear();
@@ -474,10 +464,7 @@ void ArmorDetect::loadTemplates()
                      digit, small_file.c_str(), big_file.c_str());
             continue; // 跳过这个数字，继续加载下一个
         }
-        // 可选：调整大小至统一尺寸 - 不建议使用，使用原图片尺寸进行匹配的效果更好
-        //cv::resize(small_tpl, small_tpl, cv::Size(digit_resize_.small, digit_resize_.small));
-        // cv::resize(big_tpl, big_tpl, cv::Size(digit_resize_.big, digit_resize_.big));
-        // 确保图像类型为 CV_8UC1（单通道8位），为后续 matchTemplate 做准备
+        
         if (small_tpl.type() != CV_8UC1) small_tpl.convertTo(small_tpl, CV_8UC1);
         if (big_tpl.type() != CV_8UC1) big_tpl.convertTo(big_tpl, CV_8UC1);
 
@@ -576,29 +563,55 @@ cv::Mat ArmorDetect::extractFrontImage(const cv::Mat &src, const LightDescriptor
         return cv::Mat();
     }
 
-    // 1. 使用统一的顶点选择函数
+    // 1. 获取原始的灯条4个顶点
     std::vector<cv::Point2f> src_points = selectArmorVertices(left_light, right_light);
     
     if (src_points.size() != 4)
     {
-        ROS_WARN("extractFrontImage: Failed to get 4 vertices, got %zu", src_points.size());
+        ROS_WARN("extractFrontImage: Failed to get 4 vertices");
         return cv::Mat();
     }
+
+    // =========================================================================
+    // 【新增逻辑】纵向延伸顶点，确保包含完整的数字
+    // =========================================================================
     
-    // 2. 定义目标图像尺寸
-    int width, height;
-    if (armor_type == 1)  // 大装甲板
-    {                
-        width = armor_real_.big_width ;
-        height = armor_real_.big_height; 
-    }
-    else  // 小装甲板
-    { 
-        width = armor_real_.small_width;
-        height = armor_real_.small_height;
-    }
+    // 定义延伸比例 (Extension Ratio)
+    // 假设物理灯条高度约 55mm，数字贴纸区域高度约 100mm (小装甲) 或 110mm (大装甲)
+    // 比例 = 期望高度 / 灯条高度。 建议范围 1.5 ~ 2.0
+    float extend_ratio = (armor_type == 1) ? 2.08f : 2.0f; 
+
+    // 顶点顺序回顾: 0:左上, 1:右上, 2:右下, 3:左下
     
-    // 3. 目标图像的四个角点
+    // --- 处理左侧灯条 (点0 和 点3) ---
+    cv::Point2f &tl = src_points[0]; // Top Left
+    cv::Point2f &bl = src_points[3]; // Bottom Left
+    cv::Point2f left_center = (tl + bl) / 2.0f;
+    
+    // 向量计算：从中心向外延伸
+    tl = left_center + (tl - left_center) * extend_ratio;
+    bl = left_center + (bl - left_center) * extend_ratio;
+
+    // --- 处理右侧灯条 (点1 和 点2) ---
+    cv::Point2f &tr = src_points[1]; // Top Right
+    cv::Point2f &br = src_points[2]; // Bottom Right
+    cv::Point2f right_center = (tr + br) / 2.0f;
+
+    // 向量计算：从中心向外延伸
+    tr = right_center + (tr - right_center) * extend_ratio;
+    br = right_center + (br - right_center) * extend_ratio;
+    
+    // =========================================================================
+
+    // 2. 定义目标图像尺寸 (建议使用较小的固定尺寸以加速匹配)
+    // 之前建议改为 32x32 或 48x48，这里配合延伸可以适当调高长宽比
+    // int width = 32; 
+    // int height = 48; // 因为拉长了高度，所以高度像素给多一点，保持比例
+    int width = (armor_type == 1) ? armor_real_.big_width : armor_real_.small_width;
+    int height = (armor_type == 1) ? armor_real_.big_height : armor_real_.small_height;
+
+
+    // 3. 目标图像的四个角点 (对应延伸后的区域)
     std::vector<cv::Point2f> dst_points;
     dst_points.push_back(cv::Point2f(0, 0));           // 左上
     dst_points.push_back(cv::Point2f(width, 0));       // 右上
@@ -610,11 +623,15 @@ cv::Mat ArmorDetect::extractFrontImage(const cv::Mat &src, const LightDescriptor
     cv::Mat front_img;
     cv::warpPerspective(src, front_img, perspective_matrix, cv::Size(width, height));
     
-    // 5. 转换为灰度图
+    // 5. 转换为灰度图 (保持不变)
     if (front_img.channels() == 3)
     {
         cv::cvtColor(front_img, front_img, cv::COLOR_BGR2GRAY);
     }
+    
+    // 6. 二值化增强 (可选)
+    // 加上这一步可以大幅提高由于光照变化导致的匹配失败
+    // cv::threshold(front_img, front_img, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
 
     return front_img;
 }

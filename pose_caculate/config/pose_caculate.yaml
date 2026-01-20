@@ -4,7 +4,7 @@ small_armor_height: 0.060
 big_armor_width: 0.230
 big_armor_height: 0.060
 
-pnp_method: 0
+pnp_method: 6
 
 debug_mode: false
 print_results: true

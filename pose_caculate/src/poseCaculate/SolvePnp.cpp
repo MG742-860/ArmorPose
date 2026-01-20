@@ -29,7 +29,7 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Ma
     {
         bool success = cv::solvePnP(object_points, image_points,
                                     camera_matrix_, dist_coeffs_,
-                                    rvec, tvec, false, cv::SOLVEPNP_ITERATIVE);
+                                    rvec, tvec, false, pnp_method_);
         
         if (!success) 
         {
@@ -39,49 +39,25 @@ bool PoseCaculate::solvePnPForArmor(const armor_detect::ArmorInfo &armor, cv::Ma
             }
             return false;
         }
-        cv::Mat filter_rvec = rvec.clone();
-        cv::Mat filter_tvec = tvec.clone();
-        
         // 5. 检查距离合理性
-        double current_distance = cv::norm(filter_tvec);
+        double current_distance = cv::norm(tvec);
         if (current_distance < min_valid_distance_ || current_distance > max_valid_distance_) 
         {
             return false;
         }
         
         // 6. 验证位姿
-        if (!validatePoseResult(filter_rvec, filter_tvec, armor.armor_id)) 
+        if (!validatePoseResult(rvec, tvec, armor.armor_id)) 
         {
             return false;
         }
         static std::map<int, cv::Mat> last_tvecs;
         static std::map<int, cv::Mat> last_rvecs;
         int id = armor.armor_id;
-
-        if (last_tvecs.find(id) != last_tvecs.end() && enable_filter_) {
-            double move_dist = cv::norm(filter_tvec - last_tvecs[id]);
-            
-            if (move_dist < 1.0) { // 正常运动范围
-                // --- 自适应 Alpha ---
-                // 距离 2m 时 alpha 约 0.7 (较灵敏)
-                // 距离 4m 时 alpha 约 0.3 (极度平滑)
-                double alpha = 1.0 - (current_distance / 6.0); 
-                alpha = std::max(0.2, std::min(0.8, alpha)); // 限制范围在 0.2 ~ 0.8
-                
-                // 如果是大装甲板，额外增强平滑度
-                if (armor.armor_type == 1) { 
-                    alpha *= 0.7; 
-                }
-
-                filter_tvec = alpha * filter_tvec + (1.0 - alpha) * last_tvecs[id];
-                filter_rvec = alpha * filter_rvec + (1.0 - alpha) * last_rvecs[id];
-            }
-            // 如果 move_dist 过大，说明是新目标或跳变，直接更新不滤波
-        }
         
         // 更新历史记录
-        last_tvecs[id] = filter_tvec.clone();
-        last_rvecs[id] = filter_rvec.clone();
+        last_tvecs[id] = tvec.clone();
+        last_rvecs[id] = rvec.clone();
 
         return true;
     }catch (const cv::Exception &e) 

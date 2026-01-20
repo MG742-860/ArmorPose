@@ -50,6 +50,7 @@ void PoseCaculate::drawCoordinateAxis(cv::Mat &img, const cv::Mat &rvec, const c
 
 void PoseCaculate::pub_debug_image(const cv::Mat &rvecs, const cv::Mat &tvecs)
 {
+    if (image_pub_.getNumSubscribers() == 0) return;
     cv::Mat debug_image;
     {
         std::lock_guard<std::mutex> lock(img_mutex_);
