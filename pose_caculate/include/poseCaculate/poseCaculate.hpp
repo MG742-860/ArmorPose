@@ -123,7 +123,7 @@ public:
     void debugTransform(const cv::Mat &rvec, const cv::Mat &tvec, int armor_id);    
 
     // 绘制坐标轴到图像上（可选）
-    void pub_debug_image(const cv::Mat &rvecs, const cv::Mat &tvecs);
+    void pub_debug_image(const cv::Mat &img);
     void drawCoordinateAxis(cv::Mat &img, const cv::Mat &rvec, const cv::Mat &tvec);
     void imageCallback(const sensor_msgs::ImageConstPtr &img_msg, const sensor_msgs::CameraInfoConstPtr &info_msg);
 };

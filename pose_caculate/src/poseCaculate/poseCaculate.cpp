@@ -171,6 +171,20 @@ void PoseCaculate::armorCallback(const armor_detect::ArmorArrayConstPtr &armor_m
                  armor_msg->armors[0].vertices_pixel[i].x, armor_msg->armors[0].vertices_pixel[i].y);
     }
 
+    cv::Mat debug_image_;
+    bool need_draw_ = axis_drawn_ && (image_pub_.getNumSubscribers() > 0);
+    if(need_draw_)
+    {
+        std::lock_guard<std::mutex> lock(img_mutex_);
+        if(!current_image_.empty())
+        {
+            debug_image_ = current_image_.clone();
+        }
+        else
+        {
+            need_draw_ = false;
+        }
+    }
     // 处理每个装甲板
     int success_count = 0;
     for (size_t i = 0; i < armor_msg->armors.size(); ++i) {
@@ -197,8 +211,16 @@ void PoseCaculate::armorCallback(const armor_detect::ArmorArrayConstPtr &armor_m
                                   armor.armor_id, armor.armor_type);
             }
 
-            if(axis_drawn_) pub_debug_image(rvec, tvec);
+            if(need_draw_) 
+            {
+               drawCoordinateAxis(debug_image_, rvec, tvec);
+            }
         }
+    }
+
+    if(need_draw_ && !debug_image_.empty())
+    {
+        pub_debug_image(debug_image_);
     }
 
     if (debug_mode_ && success_count > 0) {

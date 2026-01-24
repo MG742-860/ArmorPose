@@ -48,22 +48,17 @@ void PoseCaculate::drawCoordinateAxis(cv::Mat &img, const cv::Mat &rvec, const c
     cv::line(img, imagePoints[0], imagePoints[3], cv::Scalar(255, 0, 0), 3);
 }
 
-void PoseCaculate::pub_debug_image(const cv::Mat &rvecs, const cv::Mat &tvecs)
+void PoseCaculate::pub_debug_image(const cv::Mat &debug_image)
 {
-    if (image_pub_.getNumSubscribers() == 0) return;
-    cv::Mat debug_image;
-    {
-        std::lock_guard<std::mutex> lock(img_mutex_);
-        if (current_image_.empty()) return;
-        debug_image = current_image_.clone(); // 只拷贝一次底图
-    }
-    // 绘制坐标轴
-    drawCoordinateAxis(debug_image, rvecs, tvecs);
     // 发布最终合成的图像
-    if (image_pub_.getNumSubscribers() > 0) 
+    if (image_pub_.getNumSubscribers() > 0)
     {
         sensor_msgs::ImagePtr out_msg = cv_bridge::CvImage(std_msgs::Header(), "bgr8", debug_image).toImageMsg();
         out_msg->header.stamp = ros::Time::now(); // 更新时间戳
         image_pub_.publish(out_msg);
+    }
+    else
+    {
+        return;
     }
 }
